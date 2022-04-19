@@ -34,7 +34,9 @@ class Robinhood:
         "user": "https://api.robinhood.com/user/",
         "watchlists": "https://api.robinhood.com/watchlists/",
         "optionsOrders":"https://api.robinhood.com/options/orders/",
-        "optionsPositions":"https://api.robinhood.com/options/positions/"
+        "optionsPositions":"https://api.robinhood.com/options/positions/",
+        "crypto_orders":"https://nummus.robinhood.com/orders/",
+        "currency_pairs":"https://nummus.robinhood.com/currency_pairs/",
     }
 
     session = None
@@ -143,6 +145,11 @@ class Robinhood:
                 raise NameError("Invalid Symbol: " + stock);
         except (ValueError):
             raise NameError("Invalid Symbol: " + stock);
+
+    def get_currency_pairs(self, currency_pair_ids):
+        res = self.session.get(self.endpoints["currency_pairs"], params={"ids": "".join(currency_pair_ids)})
+        json = res.json()
+        return json
 
     def get_quote(self, stock=None):
         data = self.quote_data(stock)

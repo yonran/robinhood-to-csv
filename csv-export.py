@@ -8,6 +8,7 @@ import argparse
 import ast
 from dotenv import load_dotenv, find_dotenv
 import os
+import csv
 
 logged_in = False
 
@@ -29,6 +30,8 @@ parser.add_argument(
     '--profit', action='store_true', help='calculate profit for each sale')
 parser.add_argument(
     '--dividends', action='store_true', help='export dividend payments')
+parser.add_argument(
+    '--crypto', action='store_true', help='export crypto')
 args = parser.parse_args()
 username = args.username
 password = args.password
@@ -125,22 +128,6 @@ else:
 # CSV headers
 keys = fields[0].keys()
 keys = sorted(keys)
-csv = ','.join(keys) + "\n"
-
-# CSV rows
-for row in fields:
-    for idx, key in enumerate(keys):
-        if (idx > 0):
-            csv += ","
-        try:
-            if key == 'executed_notional' or key == 'last_trail_price' or key == 'dollar_based_amount' or key == 'total_notional':
-                csv += "\""+str(fields[row][key])+"\""
-            else:
-                csv += str(fields[row][key])
-        except:
-            csv += ""
-
-    csv += "\n"
 
 # choose a filename to save to
 print("Choose a filename or press enter to save to `robinhood.csv`:")
@@ -154,7 +141,9 @@ if filename == '':
 
 try:
     with open(filename, "w+") as outfile:
-        outfile.write(csv)
+        writer = csv.writer(outfile)
+        writer.writerow(keys)
+        writer.writerows(([row.get(key) for key in keys] for row in fields.values()))
 except IOError:
     print("Oops.  Unable to write file to ", filename)
 
@@ -211,21 +200,9 @@ if args.dividends:
         quit()
 
     # CSV headers
+
     keys = fields[0].keys()
     keys = sorted(keys)
-    csv = ','.join(keys) + "\n"
-
-    # CSV rows
-    for row in fields:
-        for idx, key in enumerate(keys):
-            if (idx > 0):
-                csv += ","
-            try:
-                csv += str(fields[row][key])
-            except:
-                csv += ""
-
-        csv += "\n"
 
     # choose a filename to save to
     print("Choose a filename or press enter to save to `dividends.csv`:")
@@ -240,7 +217,66 @@ if args.dividends:
     # save the CSV
     try:
         with open(filename, "w+") as outfile:
-            outfile.write(csv)
+            writer = csv.writer(outfile)
+            writer.writerow(keys)
+            writer.writerows(([row.get(key) for key in keys] for row in fields.values()))
+    except IOError:
+        print("Oops.  Unable to write file to ", filename)
+
+if args.crypto:
+    paginated = True
+    results = []
+    currency_pair_ids = set()
+    is_first = True
+    next_url = None
+    while is_first or next_url:
+        if is_first:
+            response = robinhood.get_endpoint('crypto_orders')
+        else:
+            response = robinhood.get_custom_endpoint(next_url)
+        is_first = False
+        next_url = response['next']
+        results += response['results']
+        currency_pair_ids.update((order["currency_pair_id"] for order in results))
+
+    # dict from currency_pair_id to dict e.g. {"symbol": "BTC-USD", "asset_currency": {"code": "BTC", …}, …}
+    cached_currency_pairs = {}
+    is_first = True
+    next_url = None
+    while len(currency_pair_ids) > 0 and (is_first or next_url):
+        if is_first:
+            response = robinhood.get_currency_pairs(currency_pair_ids)
+        else:
+            response = robinhood.get_custom_endpoint(next_url)
+        is_first = False
+        next_url = response['next']
+        for result in response['results']:
+            cached_currency_pairs[result['id']] = result
+
+    for result in results:
+        currency_pair = cached_currency_pairs[result['currency_pair_id']]
+        result['currency_pair_symbol'] = currency_pair['symbol']
+        result['asset_currency_code'] = currency_pair['asset_currency']['code']
+
+    # CSV headers
+    keys = sorted(list(set(key for order in results for key in order.keys())))
+
+    # choose a filename to save to
+    print("Choose a filename or press enter to save to `crypto.csv`:")
+    try:
+        input = raw_input
+    except NameError:
+        pass
+    filename = input().strip()
+    if filename == '':
+        filename = "crypto.csv"
+
+    # save the CSV
+    try:
+        with open(filename, "w+") as outfile:
+            writer = csv.writer(outfile)
+            writer.writerow(keys)
+            writer.writerows(([row.get(key) for key in keys] for row in results))
     except IOError:
         print("Oops.  Unable to write file to ", filename)
 
